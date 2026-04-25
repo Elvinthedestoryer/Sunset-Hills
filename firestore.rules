@@ -108,5 +108,19 @@ service cloud.firestore {
       allow update: if isAdmin() && isValidRoom(incoming());
       allow delete: if isAdmin();
     }
+
+    // --- Room Blocks ---
+    match /room_blocks/{blockId} {
+      function isValidBlock(data) {
+        return data.keys().hasAll(['roomId', 'date', 'createdAt']) &&
+               data.roomId is string && data.roomId.size() <= 128 &&
+               data.date is string && data.date.size() <= 12 &&
+               data.createdAt is string;
+      }
+      allow read: if true;
+      allow create: if isAdmin() && isValidBlock(incoming());
+      allow update: if isAdmin() && isValidBlock(incoming());
+      allow delete: if isAdmin();
+    }
   }
 }

@@ -55,6 +55,18 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "price", "image", "amenities", "createdAt"]
+    },
+    "RoomBlock": {
+      "title": "Room Block",
+      "description": "Dates when a room is unavailable (manually blocked by admin)",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "date": { "type": "string", "description": "Format: YYYY-MM-DD" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "date", "createdAt"]
     }
   },
   "firestore": {
@@ -73,6 +85,10 @@
     "/rooms/{roomId}": {
       "schema": "Room",
       "description": "Room listings"
+    },
+    "/room_blocks/{blockId}": {
+      "schema": "RoomBlock",
+      "description": "Manually blocked dates for specific rooms"
     }
   }
 }

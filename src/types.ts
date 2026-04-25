@@ -42,3 +42,11 @@ export interface GalleryImage {
   order: number;
   createdAt: string;
 }
+
+export interface RoomBlock {
+  id: string;
+  roomId: string;
+  date: string; // YYYY-MM-DD
+  note?: string;
+  createdAt: string;
+}

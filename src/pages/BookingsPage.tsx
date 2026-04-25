@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { IndianRupee, Calendar, Users, Waves, ChevronRight, Loader2, Package } from 'lucide-react';
-import { Room } from '@/src/types';
+import { IndianRupee, Calendar, Users, Waves, ChevronRight, Loader2, Package, AlertTriangle } from 'lucide-react';
+import { Room, Booking, RoomBlock } from '@/src/types';
 import { useAuth } from '@/src/lib/AuthContext';
 import { db, handleFirestoreError } from '@/src/lib/firebase';
-import { collection, addDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 
 export default function BookingsPage() {
   const [searchParams] = useSearchParams();
@@ -13,6 +13,8 @@ export default function BookingsPage() {
   const { user } = useAuth();
   
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
+  const [roomBlocks, setRoomBlocks] = useState<RoomBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [checkIn, setCheckIn] = useState('');
@@ -22,29 +24,80 @@ export default function BookingsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const q = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snapshot) => {
+    const roomsQ = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
+    const unsubRooms = onSnapshot(roomsQ, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room));
       setRooms(docs);
       
-      // Select first room if none selected and rooms exist
       if (docs.length > 0 && !selectedRoomId) {
         const paramId = searchParams.get('room');
         const found = docs.find(r => r.id === paramId || r.name.toLowerCase().includes(paramId?.toLowerCase() || ''));
         setSelectedRoomId(found ? found.id : docs[0].id);
       }
-      setLoading(false);
-    }, (err) => {
-      console.error(err);
+    });
+
+    const blocksQ = query(collection(db, 'room_blocks'));
+    const unsubBlocks = onSnapshot(blocksQ, (snapshot) => {
+      setRoomBlocks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RoomBlock)));
+    });
+
+    const bookingsQ = query(collection(db, 'bookings'), where('status', 'in', ['pending', 'confirmed']));
+    const unsubBookings = onSnapshot(bookingsQ, (snapshot) => {
+      setAllBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking)));
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      unsubRooms();
+      unsubBlocks();
+      unsubBookings();
+    };
   }, [searchParams, selectedRoomId]);
+
+  const checkAvailability = (roomId: string, startStr: string, endStr: string) => {
+    if (!startStr || !endStr) return true;
+    
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    
+    // Check manual blocks
+    const isBlocked = roomBlocks.some(block => {
+      if (block.roomId !== roomId) return false;
+      const blockDate = new Date(block.date);
+      return blockDate >= start && blockDate < end;
+    });
+    
+    if (isBlocked) return false;
+
+    // Check existing bookings
+    const isBooked = allBookings.some(booking => {
+      if (booking.roomId !== roomId) return false;
+      const bStart = new Date(booking.checkIn);
+      const bEnd = new Date(booking.checkOut);
+      
+      // Overlap logic: (StartA < EndB) and (EndA > StartB)
+      return (start < bEnd) && (end > bStart);
+    });
+
+    return !isBooked;
+  };
+
+  const availableRooms = useMemo(() => {
+    if (!checkIn || !checkOut) return rooms;
+    return rooms.map(room => ({
+      ...room,
+      isAvailable: checkAvailability(room.id, checkIn, checkOut)
+    }));
+  }, [rooms, roomBlocks, allBookings, checkIn, checkOut]);
 
   const selectedRoomDetails = useMemo(() => {
     return rooms.find(r => r.id === selectedRoomId);
   }, [rooms, selectedRoomId]);
+
+  const isSelectedRoomAvailable = useMemo(() => {
+    if (!selectedRoomId || !checkIn || !checkOut) return true;
+    return checkAvailability(selectedRoomId, checkIn, checkOut);
+  }, [selectedRoomId, checkIn, checkOut, roomBlocks, allBookings]);
 
   const nights = useMemo(() => {
     if (!checkIn || !checkOut) return 0;
@@ -74,6 +127,11 @@ export default function BookingsPage() {
 
     if (nights <= 0) {
       alert("Please select a valid checkout date that is after the check-in date.");
+      return;
+    }
+
+    if (!isSelectedRoomAvailable) {
+      alert("This sanctuary is not available for the selected dates. Please choose another sanctuary or adjust your stay period.");
       return;
     }
 
@@ -154,6 +212,13 @@ export default function BookingsPage() {
               </div>
             )}
 
+            {!isSelectedRoomAvailable && (
+              <div className="mb-8 p-4 bg-red-50 border border-red-100 text-red-600 text-[10px] rounded-sm font-bold uppercase tracking-widest flex items-center gap-3">
+                <AlertTriangle size={18} />
+                Selected sanctuary is unavailable for these dates.
+              </div>
+            )}
+
             {!user && (
               <div className="mb-8 p-6 bg-primary-amber/5 border border-primary-amber/10 rounded-sm flex items-center justify-between">
                 <p className="text-[11px] uppercase tracking-widest font-bold text-slate-grey">Please sign in to complete your booking.</p>
@@ -171,23 +236,28 @@ export default function BookingsPage() {
               <div>
                 <label className="block text-[10px] uppercase tracking-[0.3em] font-bold text-slate-grey/40 mb-6">Select Your Sanctuary</label>
                 <div className="grid sm:grid-cols-2 gap-6">
-                  {rooms.map(room => (
+                  {availableRooms.map(room => (
                     <button
                       key={room.id}
                       type="button"
                       onClick={() => setSelectedRoomId(room.id)}
-                      className={`p-6 rounded-sm border transition-all text-left flex items-center gap-4 ${
+                      className={`p-6 rounded-sm border transition-all text-left flex items-center gap-4 relative overflow-hidden ${
                         selectedRoomId === room.id 
                           ? 'border-primary-burnt bg-primary-burnt/5' 
                           : 'border-slate-grey/5 hover:border-primary-amber/30'
-                      }`}
+                      } ${!room.isAvailable ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
                     >
                       <div className="w-16 h-16 rounded-sm overflow-hidden flex-shrink-0">
                         <img src={room.image} alt={room.name} className="w-full h-full object-cover" />
                       </div>
-                      <div>
+                      <div className="flex-grow">
                         <h4 className="font-serif text-xl text-slate-grey italic mb-1">{room.name}</h4>
-                        <p className="text-[10px] uppercase tracking-widest font-bold opacity-40">₹{room.price.toLocaleString()}/night</p>
+                        <div className="flex justify-between items-center">
+                          <p className="text-[10px] uppercase tracking-widest font-bold opacity-40">₹{room.price.toLocaleString()}/night</p>
+                          {!room.isAvailable && (
+                            <span className="text-[9px] font-bold text-red-500 uppercase tracking-tighter bg-red-50 px-2 py-0.5 rounded-sm">Unavailable</span>
+                          )}
+                        </div>
                       </div>
                     </button>
                   ))}

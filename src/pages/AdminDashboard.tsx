@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { IndianRupee, Mail, Calendar, Package, CheckCircle, Clock, Loader2, AlertTriangle, Image as ImageIcon, Plus, Trash2, X, Upload } from 'lucide-react';
-import { Booking, GalleryImage, Room } from '@/src/types';
+import { IndianRupee, Mail, Calendar, Package, CheckCircle, Clock, Loader2, AlertTriangle, Image as ImageIcon, Plus, Trash2, X, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Booking, GalleryImage, Room, RoomBlock } from '@/src/types';
 import { db, handleFirestoreError } from '@/src/lib/firebase';
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '@/src/lib/AuthContext';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'bookings' | 'gallery' | 'rooms'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'gallery' | 'rooms' | 'availability'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomBlocks, setRoomBlocks] = useState<RoomBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { isAdmin, user } = useAuth();
@@ -59,25 +60,46 @@ export default function AdminDashboard() {
 
   const DEFAULT_ROOMS = [
     {
-      name: 'The Apex Suites',
+      name: 'The Apex Suite 101',
       description: 'Our most elevated position. These suites feature private balconies with 270-degree panoramic views and outdoor luxury Jacuzzis.',
       price: 45000,
       image: 'https://images.unsplash.com/photo-1582719478237-afdf3501ba7f?q=80&w=2070&auto=format&fit=crop',
       amenities: '270° View, Heated Jacuzzi, Private Balcony, Premium Mini-bar'
     },
     {
-      name: 'The Horizon Rooms',
+      name: 'The Apex Suite 102',
+      description: 'The twin to 101, offering slightly different perspective of the peaks with the same unparalleled luxury.',
+      price: 45000,
+      image: 'https://images.unsplash.com/photo-1590490359683-658d3d23f972?q=80&w=2070&auto=format&fit=crop',
+      amenities: '270° View, Heated Jacuzzi, Private Balcony, Premium Mini-bar'
+    },
+    {
+      name: 'The Horizon Room 201',
       description: 'Elegantly appointed rooms offering stunning mid-range valley views. Perfect for those seeking a balance of luxury and vantage.',
       price: 32000,
       image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=2070&auto=format&fit=crop',
       amenities: 'Valley View, Modern Interiors, King Size Bed, Rain Shower'
     },
     {
-      name: 'The Serenity Rooms',
+      name: 'The Horizon Room 202',
+      description: 'Spacious and warm, these rooms capture the morning sun reflecting off the mountain ridges.',
+      price: 32000,
+      image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=2070&auto=format&fit=crop',
+      amenities: 'Valley View, Afternoon Sun, King Size Bed, Rain Shower'
+    },
+    {
+      name: 'The Serenity Room 301',
       description: 'Nestled within the lush greenery, these rooms offer ultimate privacy and tranquility, ideal for couples seeking a quiet woodland escape.',
       price: 25000,
       image: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?q=80&w=2070&auto=format&fit=crop',
       amenities: 'Woodland View, Ultimate Privacy, Garden Access, Quiet Escape'
+    },
+    {
+      name: 'The Serenity Room 302',
+      description: 'Deep within the foliage, room 302 offers an intimate connection with nature and the sounds of the forest.',
+      price: 25000,
+      image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?q=80&w=1980&auto=format&fit=crop',
+      amenities: 'Forest Sounds, Direct Garden Trail, Quiet Privacy'
     }
   ];
 
@@ -149,10 +171,21 @@ export default function AdminDashboard() {
       handleError(err, 'list', 'rooms');
     });
 
+    // Availability Blocks Listener
+    const blocksQ = query(collection(db, 'room_blocks'));
+    const unsubBlocks = onSnapshot(blocksQ, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RoomBlock));
+      setRoomBlocks(docs);
+      if (activeTab === 'availability') setLoading(false);
+    }, (err) => {
+      handleError(err, 'list', 'room_blocks');
+    });
+
     return () => {
       unsubBookings();
       unsubGallery();
       unsubRooms();
+      unsubBlocks();
     };
   }, [isAdmin, activeTab]);
 
@@ -304,6 +337,14 @@ export default function AdminDashboard() {
             }`}
           >
             Room Listings
+          </button>
+          <button 
+            onClick={() => { setActiveTab('availability'); setLoading(true); }}
+            className={`px-6 py-2 rounded-md text-[10px] font-bold uppercase tracking-widest transition-all ${
+              activeTab === 'availability' ? 'bg-white text-slate-grey shadow-sm' : 'text-slate-grey/40 hover:text-slate-grey/60'
+            }`}
+          >
+            Availability
           </button>
         </div>
       </div>
@@ -529,6 +570,21 @@ export default function AdminDashboard() {
                 <p className="text-slate-grey/40 italic">Your gallery is empty. Start curated your collection.</p>
               </div>
             )}
+          </motion.div>
+        ) : activeTab === 'availability' ? (
+          <motion.div
+            key="availability"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-8"
+          >
+            <AvailabilityManager 
+              rooms={rooms} 
+              roomBlocks={roomBlocks} 
+              bookings={bookings}
+              onHandleError={handleError}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -801,6 +857,154 @@ export default function AdminDashboard() {
           </div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function AvailabilityManager({ rooms, roomBlocks, bookings, onHandleError }: any) {
+  const [selectedRoomId, setSelectedRoomId] = useState<string>(rooms[0]?.id || '');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const firstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const totalDays = daysInMonth(year, month);
+  const startDay = firstDayOfMonth(year, month);
+
+  const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+
+  const toggleDay = async (day: number) => {
+    if (!selectedRoomId) return;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const existingBlock = roomBlocks.find((b: any) => b.roomId === selectedRoomId && b.date === dateStr);
+
+    try {
+      if (existingBlock) {
+        await deleteDoc(doc(db, 'room_blocks', existingBlock.id));
+      } else {
+        await addDoc(collection(db, 'room_blocks'), {
+          roomId: selectedRoomId,
+          date: dateStr,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (err: any) {
+      onHandleError(err, 'write', 'room_blocks');
+    }
+  };
+
+  const isBlocked = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return roomBlocks.some((b: any) => b.roomId === selectedRoomId && b.date === dateStr);
+  };
+
+  const hasBooking = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return bookings.some((b: any) => 
+      b.roomId === selectedRoomId && 
+      b.status !== 'cancelled' &&
+      dateStr >= b.checkIn && 
+      dateStr < b.checkOut
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-sm shadow-artistic border border-slate-grey/5 p-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+        <div>
+          <h3 className="font-serif text-2xl text-slate-grey italic mb-1">Availability Calendar</h3>
+          <p className="text-slate-grey/40 text-[10px] font-bold uppercase tracking-widest">Mark dates as unavailable to disable booking</p>
+        </div>
+
+        <div className="flex gap-4">
+          <select 
+            value={selectedRoomId}
+            onChange={(e) => setSelectedRoomId(e.target.value)}
+            className="bg-slate-grey/5 border-b border-slate-grey/10 py-2 px-4 outline-none focus:border-primary-burnt text-xs font-bold uppercase tracking-wider min-w-[200px]"
+          >
+            {rooms.length === 0 && <option>No Rooms Found</option>}
+            {rooms.map((room: any) => (
+              <option key={room.id} value={room.id}>{room.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-6">
+        <h4 className="font-bold text-slate-grey uppercase tracking-[0.2em] text-sm">
+          {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </h4>
+        <div className="flex gap-2">
+          <button onClick={prevMonth} className="p-2 hover:bg-slate-grey/5 rounded-full transition-colors text-slate-grey/40 hover:text-slate-grey">
+            <ChevronLeft size={20} />
+          </button>
+          <button onClick={nextMonth} className="p-2 hover:bg-slate-grey/5 rounded-full transition-colors text-slate-grey/40 hover:text-slate-grey">
+            <ChevronRight size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-px bg-slate-grey/5 border border-slate-grey/5 rounded-sm overflow-hidden">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+          <div key={day} className="bg-slate-grey/[0.02] p-4 text-center text-[10px] font-bold uppercase tracking-widest text-slate-grey/40">
+            {day}
+          </div>
+        ))}
+
+        {Array.from({ length: startDay }).map((_, i) => (
+          <div key={`empty-${i}`} className="bg-white p-4 h-24 border-r border-b border-slate-grey/5" />
+        ))}
+
+        {Array.from({ length: totalDays }).map((_, i) => {
+          const day = i + 1;
+          const blocked = isBlocked(day);
+          const occupied = hasBooking(day);
+
+          return (
+            <button
+              key={day}
+              onClick={() => toggleDay(day)}
+              className={`relative bg-white p-4 h-24 border-r border-b border-slate-grey/5 hover:bg-primary-amber/5 transition-all text-left group ${
+                blocked ? 'bg-red-50' : occupied ? 'bg-amber-50/50' : ''
+              }`}
+            >
+              <span className={`text-xs font-bold ${blocked ? 'text-red-500' : 'text-slate-grey/60'}`}>{day}</span>
+              
+              {blocked && (
+                <div className="absolute inset-x-2 bottom-2 bg-red-500 text-white text-[8px] font-bold uppercase py-1 px-2 rounded-sm tracking-tighter">
+                  Blocked
+                </div>
+              )}
+
+              {occupied && !blocked && (
+                <div className="absolute inset-x-2 bottom-2 bg-amber-500/20 text-amber-700 text-[8px] font-bold uppercase py-1 px-2 rounded-sm tracking-tighter">
+                  Booked
+                </div>
+              )}
+
+              <div className="absolute inset-0 border-2 border-primary-amber opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            </button>
+          );
+        })}
+      </div>
+      
+      <div className="mt-8 flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-red-500 rounded-full" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-grey/40">Manually Blocked</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-amber-500/20 border border-amber-500/30 rounded-full" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-grey/40">Existing Reservation</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-white border border-slate-grey/10 rounded-full" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-grey/40">Available Sanctuary</span>
+        </div>
+      </div>
     </div>
   );
 }

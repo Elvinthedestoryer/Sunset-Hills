@@ -44,14 +44,14 @@ service cloud.firestore {
     // --- Bookings ---
     match /bookings/{bookingId} {
       function isValidBooking(data) {
-        return data.keys().hasAll(['userId', 'userEmail', 'roomId', 'roomName', 'checkIn', 'checkOut', 'nights', 'totalPrice', 'status', 'createdAt']) &&
+        return data.keys().hasAll(['userId', 'userEmail', 'roomId', 'checkIn', 'checkOut', 'totalPrice', 'status', 'createdAt']) &&
                data.userId is string && data.userId.size() <= 128 &&
                data.userEmail is string && data.userEmail.size() <= 256 &&
                data.roomId is string && data.roomId.size() <= 128 &&
-               data.roomName is string && data.roomName.size() <= 256 &&
+               (!('roomName' in data) || (data.roomName is string && data.roomName.size() <= 256)) &&
                data.checkIn is string && data.checkIn.size() <= 128 &&
                data.checkOut is string && data.checkOut.size() <= 128 &&
-               data.nights is number && data.nights >= 1 &&
+               (!('nights' in data) || (data.nights is number && data.nights >= 0)) &&
                data.totalPrice is number && data.totalPrice >= 0 &&
                data.status in ['pending', 'confirmed', 'cancelled'] &&
                data.createdAt is string;
@@ -65,10 +65,10 @@ service cloud.firestore {
                     incoming().status == 'pending';
                     
       allow update: if isSignedIn() && (isOwner(existing().userId) || isAdmin()) &&
-                    isValidBooking(incoming()) &&
                     (
                       isAdmin() || 
                       (
+                        isValidBooking(incoming()) &&
                         existing().status == 'pending' && 
                         incoming().diff(existing()).affectedKeys().hasOnly(['status']) && 
                         incoming().status == 'cancelled'

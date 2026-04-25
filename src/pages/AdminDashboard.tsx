@@ -33,6 +33,20 @@ export default function AdminDashboard() {
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isReseting, setIsReseting] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+
+  const clearBookings = async () => {
+    if (!confirm("Are you sure you want to PERMANENTLY delete ALL bookings? This action cannot be undone.")) return;
+    setIsClearing(true);
+    try {
+      const deletePromises = bookings.map(b => deleteDoc(doc(db, 'bookings', b.id)));
+      await Promise.all(deletePromises);
+    } catch (err: any) {
+      handleError(err, 'delete', 'bookings');
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const DEFAULT_GALLERY = [
     { url: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?q=80&w=1780&auto=format&fit=crop', caption: 'Verdant Heights', category: 'nature' },
@@ -316,9 +330,21 @@ export default function AdminDashboard() {
                   <IndianRupee size={24} /> {bookings.reduce((acc, curr) => acc + (curr.status !== 'cancelled' ? curr.totalPrice : 0), 0).toLocaleString()}
                 </p>
               </div>
-              <div className="bg-white px-8 py-6 rounded-sm shadow-artistic border border-slate-grey/5">
-                <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-grey/40 mb-2">Active Stays</p>
-                <p className="text-3xl font-bold text-slate-grey">{bookings.filter(b => b.status !== 'cancelled').length}</p>
+              <div className="bg-white px-8 py-6 rounded-sm shadow-artistic border border-slate-grey/5 flex justify-between items-center">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-grey/40 mb-2">Active Stays</p>
+                  <p className="text-3xl font-bold text-slate-grey">{bookings.filter(b => b.status !== 'cancelled').length}</p>
+                </div>
+                {bookings.length > 0 && (
+                  <button 
+                    onClick={clearBookings}
+                    disabled={isClearing}
+                    className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-600 transition-colors border border-red-100 px-4 py-2 rounded-sm hover:bg-red-50"
+                  >
+                    {isClearing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 size={14} />}
+                    Clear Ledger
+                  </button>
+                )}
               </div>
             </div>
 

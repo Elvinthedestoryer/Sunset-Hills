@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true) ||
+        (request.auth.token.email == "thunderelvin@gmail.com")
+      );
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // --- Users ---
+    match /users/{uid} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'email', 'displayName']) &&
+               data.uid == uid &&
+               data.uid is string && data.uid.size() <= 128 &&
+               data.email is string && data.email.size() <= 256 &&
+               data.displayName is string && data.displayName.size() <= 128;
+      }
+
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow create: if isOwner(uid) && isValidUser(incoming()) && 
+                    (isAdmin() || !('isAdmin' in incoming()) || incoming().isAdmin == false);
+      allow update: if (isOwner(uid) || isAdmin()) && isValidUser(incoming()) &&
+                    (isAdmin() || (incoming().diff(existing()).affectedKeys().hasOnly(['displayName'])));
+    }
+
+    // --- Bookings ---
+    match /bookings/{bookingId} {
+      function isValidBooking(data) {
+        return data.keys().hasAll(['userId', 'userEmail', 'roomId', 'roomName', 'checkIn', 'checkOut', 'nights', 'totalPrice', 'status', 'createdAt']) &&
+               data.userId is string && data.userId.size() <= 128 &&
+               data.userEmail is string && data.userEmail.size() <= 256 &&
+               data.roomId is string && data.roomId.size() <= 128 &&
+               data.roomName is string && data.roomName.size() <= 256 &&
+               data.checkIn is string && data.checkIn.size() <= 128 &&
+               data.checkOut is string && data.checkOut.size() <= 128 &&
+               data.nights is number && data.nights >= 1 &&
+               data.totalPrice is number && data.totalPrice >= 0 &&
+               data.status in ['pending', 'confirmed', 'cancelled'] &&
+               data.createdAt is string;
+      }
+
+      allow get: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && isOwner(incoming().userId) && 
+                    isValidBooking(incoming()) && 
+                    incoming().status == 'pending';
+                    
+      allow update: if isSignedIn() && (isOwner(existing().userId) || isAdmin()) &&
+                    isValidBooking(incoming()) &&
+                    (
+                      isAdmin() || 
+                      (
+                        existing().status == 'pending' && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['status']) && 
+                        incoming().status == 'cancelled'
+                      )
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // --- Gallery ---
+    match /gallery/{imageId} {
+      function isValidGalleryImage(data) {
+        return data.keys().hasAll(['url', 'order', 'createdAt']) &&
+               data.url is string && data.url.size() <= 1048576 && // 1MB limit for base64 in rules
+               data.order is number &&
+               data.createdAt is string;
+      }
+
+      allow read: if true; // Publicly viewable
+      allow create: if isAdmin() && isValidGalleryImage(incoming());
+      allow update: if isAdmin() && isValidGalleryImage(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Rooms ---
+    match /rooms/{roomId} {
+      function isValidRoom(data) {
+        return data.keys().hasAll(['name', 'price', 'image', 'amenities', 'createdAt']) &&
+               data.name is string && data.name.size() <= 200 &&
+               data.price is number && data.price >= 0 &&
+               data.image is string && data.image.size() <= 1048576 &&
+               data.amenities is string && data.amenities.size() <= 2000 &&
+               data.createdAt is string;
+      }
+
+      allow read: if true;
+      allow create: if isAdmin() && isValidRoom(incoming());
+      allow update: if isAdmin() && isValidRoom(incoming());
+      allow delete: if isAdmin();
+    }
+  }
+}
